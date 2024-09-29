@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_URL = `${process.env.NEXT_PUBLIC_API_URL}login`; // Ganti dengan URL API NestJS Anda
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL}login`;
 
 export const login = async (email: string, password: string) => {
   try {

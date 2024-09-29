@@ -1,21 +1,5 @@
-// import { ContentLayout } from "@/components/admin-panel/content-layout";
-// import { Card, CardContent } from "@/components/ui/card";
-// import { FC } from "react";
-// interface RoleProps {}
-// const Role: FC<RoleProps> = ({}) => {
-//   return (
-//     <ContentLayout title="Role">
-//       <Card className="rounded-lg border-none mt-2">
-//         <CardContent className="p-6">
-//           <div>All Role</div>
-//         </CardContent>
-//       </Card>
-//     </ContentLayout>
-//   );
-// };
-// export default Role;
 "use client";
-import React from "react";
+import React, { useEffect } from "react";
 import {
   Table,
   TableHeader,
@@ -30,39 +14,40 @@ import {
   DropdownMenu,
   DropdownItem,
   Chip,
-  User,
   Pagination,
   Selection,
-  ChipProps,
   SortDescriptor,
   Tooltip,
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  Checkbox,
+  ModalFooter,
 } from "@nextui-org/react";
-import { columns, statusOptions, users } from "@/lib/data";
+import { roleColumns, statusOptions } from "@/lib/data";
 import { ChevronDownIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { capitalize } from "@/lib/utils";
 import { ContentLayout } from "@/components/admin-panel/content-layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { EditIcon } from "@/components/Icons/EditIcon";
 import { DeleteIcon } from "@/components/Icons/DeleteIcon";
-import { EyeIcon } from "@/components/Icons/EyeIcon";
+import { RoleService } from "@/api/services/role.service";
+import { IRoleModel, RoleModel } from "@/api/models/role.model";
+import { z } from "zod";
+import { roleSchema } from "@/lib/validation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "react-toastify";
+import { LuEyeOff, LuEye } from "react-icons/lu";
 
-const statusColorMap: Record<string, ChipProps["color"]> = {
-  active: "success",
-  inactive: "danger",
-};
-
-const INITIAL_VISIBLE_COLUMNS = ["name", "role", "status", "actions"];
-
-type User = (typeof users)[0];
-
+type FormData = z.infer<typeof roleSchema>;
 export default function Role() {
   const [filterValue, setFilterValue] = React.useState("");
   const [selectedKeys, setSelectedKeys] = React.useState<Selection>(
     new Set([])
   );
-  const [visibleColumns, setVisibleColumns] = React.useState<Selection>(
-    new Set(INITIAL_VISIBLE_COLUMNS)
-  );
+
   const [statusFilter, setStatusFilter] = React.useState<Selection>("all");
   const [rowsPerPage, setRowsPerPage] = React.useState(10);
   const [sortDescriptor, setSortDescriptor] = React.useState<SortDescriptor>({
@@ -70,37 +55,79 @@ export default function Role() {
     direction: "ascending",
   });
 
+  const [roles, setRoles] = React.useState<IRoleModel[]>([]);
+
   const [page, setPage] = React.useState(1);
 
   const hasSearchFilter = Boolean(filterValue);
 
-  const headerColumns = React.useMemo(() => {
-    if (visibleColumns === "all") return columns;
+  const roleService = new RoleService();
 
-    return columns.filter((column) =>
-      Array.from(visibleColumns).includes(column.uid)
-    );
-  }, [visibleColumns]);
+  const [isLoading, setIsLoading] = React.useState(false);
 
+  const [isUpdate, setIsUpdate] = React.useState(false);
+
+  const [isModalCreate, setModalCreate] = React.useState(false);
+  const [isModalActive, setModalActive] = React.useState(false);
+  const [state, setState] = React.useState("");
+  const [dataRole, setDataRole] = React.useState<RoleModel>();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    formState: { errors },
+  } = useForm<FormData>({
+    resolver: zodResolver(roleSchema),
+  });
+
+  const fetchRoles = async () => {
+    setIsLoading(true);
+    try {
+      const data = await roleService.getAll();
+      setRoles(data);
+    } catch (err) {
+      setIsLoading(false);
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  useEffect(() => {
+    fetchRoles();
+  }, []);
+  useEffect(() => {}, [state]);
+  useEffect(() => {}, [dataRole]);
+  useEffect(() => {
+    if (dataRole) {
+      setValue("name", dataRole.name);
+      setValue("isActive", dataRole.isActive);
+    }
+  }, [dataRole, setValue]);
   const filteredItems = React.useMemo(() => {
-    let filteredUsers = [...users];
+    let filteredRoles = [...roles];
 
+    // Filter berdasarkan nama
     if (hasSearchFilter) {
-      filteredUsers = filteredUsers.filter((user) =>
-        user.role.toLowerCase().includes(filterValue.toLowerCase())
+      filteredRoles = filteredRoles.filter((role) =>
+        role.name.toLowerCase().includes(filterValue.toLowerCase())
       );
     }
+
+    // Filter berdasarkan status
     if (
       statusFilter !== "all" &&
       Array.from(statusFilter).length !== statusOptions.length
     ) {
-      filteredUsers = filteredUsers.filter((user) =>
-        Array.from(statusFilter).includes(user.status)
-      );
+      filteredRoles = filteredRoles.filter((role) => {
+        // Ubah isActive menjadi "Active" atau "Inactive" sesuai nilai boolean-nya
+        const status = role.isActive ? "Active" : "Inactive";
+        return Array.from(statusFilter).includes(status);
+      });
     }
 
-    return filteredUsers;
-  }, [users, filterValue, statusFilter]);
+    return filteredRoles;
+  }, [roles, filterValue, statusFilter]);
 
   const pages = Math.ceil(filteredItems.length / rowsPerPage);
 
@@ -112,70 +139,81 @@ export default function Role() {
   }, [page, filteredItems, rowsPerPage]);
 
   const sortedItems = React.useMemo(() => {
-    return [...items].sort((a: User, b: User) => {
-      const first = a[sortDescriptor.column as keyof User] as number;
-      const second = b[sortDescriptor.column as keyof User] as number;
+    return [...items].sort((a: RoleModel, b: RoleModel) => {
+      const first = a[sortDescriptor.column as keyof RoleModel] as number;
+      const second = b[sortDescriptor.column as keyof RoleModel] as number;
       const cmp = first < second ? -1 : first > second ? 1 : 0;
 
       return sortDescriptor.direction === "descending" ? -cmp : cmp;
     });
   }, [sortDescriptor, items]);
 
-  const renderCell = React.useCallback((user: User, columnKey: React.Key) => {
-    const cellValue = user[columnKey as keyof User];
+  const renderCell = React.useCallback(
+    (role: RoleModel, columnKey: React.Key) => {
+      const cellValue = role[columnKey as keyof RoleModel];
 
-    switch (columnKey) {
-      case "name":
-        return <p>{user.role}</p>;
-      case "status":
-        return (
-          <Chip
-            className="capitalize"
-            color={statusColorMap[user.status]}
-            size="sm"
-            variant="flat"
-          >
-            {cellValue}
-          </Chip>
-        );
-      case "actions":
-        return (
-          <div className="justify-center">
-            <div className="flex items-center justify-center gap-2">
-              <Tooltip content="Details">
-                <span className="text-lg text-default-400 cursor-pointer active:opacity-50">
-                  <EyeIcon />
-                </span>
-              </Tooltip>
-              <Tooltip content="Edit user">
-                <span className="text-lg text-default-400 cursor-pointer active:opacity-50">
-                  <EditIcon />
-                </span>
-              </Tooltip>
-              <Tooltip color="danger" content="Delete user">
-                <span className="text-lg text-danger cursor-pointer active:opacity-50">
-                  <DeleteIcon />
-                </span>
-              </Tooltip>
+      switch (columnKey) {
+        case "name":
+          return <p>{role.name}</p>;
+        case "status":
+          return (
+            <Chip
+              className="capitalize"
+              color={role.isActive ? "success" : "danger"}
+              size="sm"
+              variant="flat"
+            >
+              {role.isActive ? "Active" : "Inactive"}
+            </Chip>
+          );
+        case "actions":
+          return (
+            <div className="justify-center">
+              <div className="flex items-center justify-center gap-2">
+                <Tooltip content={role.isActive ? "Active" : "Inactive"}>
+                  <span
+                    onClick={() => {
+                      if (role.isActive) {
+                        setState("Inactive");
+                      } else {
+                        setState("Active");
+                      }
+                      setDataRole(role);
+                      setModalActive(true);
+                    }}
+                    className="text-lg text-default-400 cursor-pointer active:opacity-50"
+                  >
+                    {role.isActive ? <LuEye /> : <LuEyeOff />}
+                  </span>
+                </Tooltip>
+                <Tooltip content="Edit role">
+                  <span
+                    className="text-lg text-default-400 cursor-pointer active:opacity-50"
+                    onClick={() => {
+                      setModalCreate(true);
+                      setDataRole(role);
+                    }}
+                  >
+                    <EditIcon />
+                  </span>
+                </Tooltip>
+                <Tooltip color="danger" content="Delete role">
+                  <span className="text-lg text-danger cursor-pointer active:opacity-50">
+                    <DeleteIcon />
+                  </span>
+                </Tooltip>
+              </div>
             </div>
-          </div>
-        );
-      default:
-        return cellValue;
-    }
-  }, []);
-
-  const onNextPage = React.useCallback(() => {
-    if (page < pages) {
-      setPage(page + 1);
-    }
-  }, [page, pages]);
-
-  const onPreviousPage = React.useCallback(() => {
-    if (page > 1) {
-      setPage(page - 1);
-    }
-  }, [page]);
+          );
+        default:
+          if (cellValue instanceof Date) {
+            return cellValue.toLocaleDateString();
+          }
+          return cellValue?.toString();
+      }
+    },
+    []
+  );
 
   const onRowsPerPageChange = React.useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -198,6 +236,97 @@ export default function Role() {
     setFilterValue("");
     setPage(1);
   }, []);
+
+  const onSubmit = async (data: FormData) => {
+    setIsUpdate(true);
+    try {
+      const role: RoleModel = {
+        ...data,
+        isActive: data.isActive ?? false,
+      };
+
+      if (dataRole && dataRole.id) {
+        role.id = dataRole.id;
+        const result = await roleService.update(role.id, role);
+        if (result?.error) {
+          toast.error(result.error);
+          setIsUpdate(false);
+        } else {
+          toast.success("Successfully updated");
+          setModalCreate(false);
+          fetchRoles();
+          setIsUpdate(false);
+          reset();
+          setDataRole(new RoleModel());
+        }
+      } else {
+        const result = await roleService.create(role);
+        if (result?.error) {
+          toast.error(result.error);
+          setIsUpdate(false);
+        } else {
+          toast.success("Successfully updated");
+          setModalCreate(false);
+          fetchRoles();
+          setIsUpdate(false);
+          reset();
+          setDataRole(new RoleModel());
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        setIsUpdate(false);
+        toast.error(error.message); // Tangani error jika ada
+      } else {
+        setIsUpdate(false);
+        toast.error("Terjadi kesalahan yang tidak terduga");
+      }
+    }
+  };
+
+  const changeState = async () => {
+    setIsUpdate(true);
+    try {
+      if (!dataRole) {
+        toast.error("Role data is undefined");
+        setIsUpdate(false);
+        return; // Exit the function if dataRole is undefined
+      }
+
+      // Toggle the isActive property
+      dataRole.isActive = !dataRole.isActive;
+
+      const role: RoleModel = {
+        ...dataRole,
+        isActive: dataRole.isActive, // Use the updated isActive value
+      };
+
+      if (role.id === undefined) {
+        toast.error("Role ID is undefined");
+        setIsUpdate(false);
+        return; // Exit if id is not available
+      }
+
+      const result = await roleService.update(role.id, role);
+
+      if (result?.error) {
+        toast.error(result.error);
+        setIsUpdate(false);
+      } else {
+        toast.success("Successfully changed state");
+        setModalActive(false);
+        fetchRoles();
+        setIsUpdate(false);
+      }
+    } catch (error) {
+      setIsUpdate(false);
+      if (error instanceof Error) {
+        toast.error(error.message); // Handle known errors
+      } else {
+        toast.error("Terjadi kesalahan yang tidak terduga"); // Handle unexpected errors
+      }
+    }
+  };
 
   const topContent = React.useMemo(() => {
     return (
@@ -238,14 +367,20 @@ export default function Role() {
               </DropdownMenu>
             </Dropdown>
 
-            <Button color="primary" endContent={<PlusIcon />}>
+            <Button
+              color="primary"
+              endContent={<PlusIcon />}
+              onClick={() => {
+                setModalCreate(true);
+              }}
+            >
               Add New
             </Button>
           </div>
         </div>
         <div className="flex justify-between items-center">
           <span className="text-default-400 text-small">
-            Total {users.length} users
+            Total {roles.length} roles
           </span>
           <label className="flex items-center text-default-400 text-small">
             Rows per page:
@@ -263,21 +398,15 @@ export default function Role() {
   }, [
     filterValue,
     statusFilter,
-    visibleColumns,
     onSearchChange,
     onRowsPerPageChange,
-    users.length,
+    roles.length,
     hasSearchFilter,
   ]);
 
   const bottomContent = React.useMemo(() => {
     return (
-      <div className="py-2 px-2 flex justify-between items-center">
-        <span className="w-[30%] text-small text-default-400">
-          {selectedKeys === "all"
-            ? "All items selected"
-            : `${selectedKeys.size} of ${filteredItems.length} selected`}
-        </span>
+      <div className="py-2 px-2 flex justify-center  items-center">
         <Pagination
           isCompact
           showControls
@@ -287,31 +416,13 @@ export default function Role() {
           total={pages}
           onChange={setPage}
         />
-        <div className="hidden sm:flex w-[30%] justify-end gap-2">
-          <Button
-            isDisabled={pages === 1}
-            size="sm"
-            variant="flat"
-            onPress={onPreviousPage}
-          >
-            Previous
-          </Button>
-          <Button
-            isDisabled={pages === 1}
-            size="sm"
-            variant="flat"
-            onPress={onNextPage}
-          >
-            Next
-          </Button>
-        </div>
       </div>
     );
   }, [selectedKeys, items.length, page, pages, hasSearchFilter]);
 
   return (
     <ContentLayout title="Role">
-      <Card className="rounded-lg border-none -mt-4">
+      <Card className="rounded-lg border-none ">
         <CardContent className="p-6">
           <Table
             aria-label="Example table with custom cells, pagination and sorting"
@@ -319,7 +430,7 @@ export default function Role() {
             bottomContent={bottomContent}
             bottomContentPlacement="outside"
             classNames={{
-              wrapper: "max-h-[382px]",
+              wrapper: "max-h-[100vh]",
             }}
             selectedKeys={selectedKeys}
             sortDescriptor={sortDescriptor}
@@ -328,7 +439,7 @@ export default function Role() {
             onSelectionChange={setSelectedKeys}
             onSortChange={setSortDescriptor}
           >
-            <TableHeader columns={headerColumns}>
+            <TableHeader columns={roleColumns}>
               {(column) => (
                 <TableColumn
                   key={column.uid}
@@ -339,7 +450,11 @@ export default function Role() {
                 </TableColumn>
               )}
             </TableHeader>
-            <TableBody emptyContent={"No users found"} items={sortedItems}>
+            <TableBody
+              emptyContent={"No roles found"}
+              items={sortedItems}
+              isLoading={isLoading}
+            >
               {(item) => (
                 <TableRow key={item.id}>
                   {(columnKey) => (
@@ -349,6 +464,95 @@ export default function Role() {
               )}
             </TableBody>
           </Table>
+          <Modal
+            isOpen={isModalCreate}
+            onClose={() => setModalCreate(false)}
+            placement="top-center"
+          >
+            <ModalContent>
+              <form onSubmit={handleSubmit(onSubmit)}>
+                <ModalHeader className="flex flex-col gap-1">
+                  Create Role
+                </ModalHeader>
+                <ModalBody>
+                  <div className="relative ">
+                    <Input
+                      autoFocus
+                      placeholder="Enter role name"
+                      variant="bordered"
+                      {...register("name")}
+                      color={errors.name ? "danger" : "default"}
+                    />
+                    {errors.name && (
+                      <p className="text-red-500 text-sm absolute -bottom-5 left-0">
+                        {errors.name.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex py-2 px-1 justify-between">
+                    <Checkbox
+                      classNames={{
+                        label: "text-small",
+                      }}
+                      {...register("isActive")}
+                    >
+                      Active
+                    </Checkbox>
+                  </div>
+                </ModalBody>
+                <ModalFooter>
+                  <Button
+                    color="danger"
+                    onClick={() => {
+                      setModalActive(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" color="primary" isLoading={isUpdate}>
+                    Save
+                  </Button>
+                </ModalFooter>
+              </form>
+            </ModalContent>
+          </Modal>
+          <Modal
+            backdrop="blur"
+            isOpen={isModalActive}
+            onClose={() => setModalActive(false)}
+          >
+            <ModalContent>
+              <>
+                <ModalHeader className="flex flex-col gap-1">
+                  Change Status
+                </ModalHeader>
+                <ModalBody>
+                  <h1 className="text-xl font-bold">
+                    Are you sure change state to {state}
+                  </h1>
+                </ModalBody>
+                <ModalFooter>
+                  <Button
+                    color="danger"
+                    onClick={() => {
+                      setModalActive(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    color="primary"
+                    onClick={() => {
+                      changeState();
+                    }}
+                  >
+                    Save
+                  </Button>
+                </ModalFooter>
+              </>
+            </ModalContent>
+          </Modal>
         </CardContent>
       </Card>
     </ContentLayout>

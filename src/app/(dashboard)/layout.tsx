@@ -5,7 +5,6 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import NextAuthProvider from "../context/NextAuthProvider";
 import AdminPanelLayout from "@/components/admin-panel/admin-panel-layout";
-import { ThemeProvider } from "@/providers/theme-provider";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -41,7 +40,11 @@ export default async function RootLayout({
       >
         {/* <ThemeProvider attribute="class" defaultTheme="system" enableSystem> */}
         <AdminPanelLayout>
-          <NextAuthProvider>{children}</NextAuthProvider> <ToastContainer />
+          <NextAuthProvider>
+            {children}
+            <ToastContainer />
+          </NextAuthProvider>
+          <ToastContainer />
         </AdminPanelLayout>
         {/* </ThemeProvider> */}
       </body>
